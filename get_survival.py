@@ -4,6 +4,12 @@ import pandas as pd
 from google.cloud import bigquery
 from google.oauth2 import service_account
 from dotenv import load_dotenv
+import numpy as np
+import matplotlib.pyplot as plt
+from sksurv.nonparametric import kaplan_meier_estimator
+from sksurv.linear_model import CoxPHSurvivalAnalysis
+from sksurv.compare import compare_survival
+from sksurv.util import Surv
 
 # Load the environment variables from the .env file
 load_dotenv()
@@ -71,3 +77,42 @@ case_barcodes = df_clinical['submitter_id'].tolist()
 df_mutation = get_somatic_mutation_data(client, gene, case_barcodes)
 
 
+
+
+
+# %%
+# Prepare the data for survival analysis
+df_clinical['time'] = df_clinical['days_to_death'].fillna(df_clinical['days_to_last_follow_up'])
+df_clinical['event'] = (df_clinical['vital_status'] == 'Dead').astype(bool)
+
+# Merge clinical data with mutation data
+df_merged = df_clinical.merge(df_mutation[['case_barcode']], left_on='submitter_id', right_on='case_barcode', how='left', indicator=True)
+df_merged['mutated'] = (df_merged['_merge'] == 'both').astype(bool)
+
+# remove rows with NA in 'time' - i.e., there is no death and no follow-up time
+df_merged = df_merged.dropna(subset=['time'])
+
+# Ensure 'time' is numeric and positive
+df_merged['time'] = pd.to_numeric(df_merged['time'], errors='coerce')
+assert (df_merged['time'] > 0).all(), "Found rows with negative or zero 'time' values"
+
+# Create structured array for scikit-survival
+y = Surv.from_arrays(event=df_merged['event'], time=df_merged['time'])
+X = df_merged[['mutated']].astype(int)  # Convert boolean to int for Cox model
+
+# Compute Kaplan-Meier estimates
+time_mutated, survival_prob_mutated = kaplan_meier_estimator(y['event'][X['mutated'] == 1], y['time'][X['mutated'] == 1])
+time_wildtype, survival_prob_wildtype = kaplan_meier_estimator(y['event'][X['mutated'] == 0], y['time'][X['mutated'] == 0])
+
+# Plot
+plt.figure(figsize=(10, 6))
+plt.step(time_mutated, survival_prob_mutated, where="post", label=f'{gene} Mutated')
+plt.step(time_wildtype, survival_prob_wildtype, where="post", label=f'{gene} Wild-type')
+
+plt.ylabel("Survival probability")
+plt.xlabel("Time (days)")
+plt.legend()
+plt.title(f'Survival plot for {gene} mutations in {disease}')
+
+
+# %%
