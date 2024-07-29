@@ -26,7 +26,7 @@ def get_rnaseq_data(client, gene_name, case_barcode_list):
     return client.query(query).to_dataframe()
 
 
-# Function to get clinical data (modified to include project_id)
+# project id designates indication, e.g. 'TCGA-LUAD'
 def get_clinical_data(client, project_id=None):
 
     if project_id:
