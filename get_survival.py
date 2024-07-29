@@ -100,19 +100,24 @@ assert (df_merged['time'] > 0).all(), "Found rows with negative or zero 'time' v
 y = Surv.from_arrays(event=df_merged['event'], time=df_merged['time'])
 X = df_merged[['mutated']].astype(int)  # Convert boolean to int for Cox model
 
-# Compute Kaplan-Meier estimates
-time_mutated, survival_prob_mutated = kaplan_meier_estimator(y['event'][X['mutated'] == 1], y['time'][X['mutated'] == 1])
-time_wildtype, survival_prob_wildtype = kaplan_meier_estimator(y['event'][X['mutated'] == 0], y['time'][X['mutated'] == 0])
+# Compute Kaplan-Meier estimates with confidence intervals
+def compute_km_with_ci(event, time):
+    time_points, survival_prob, conf_int = kaplan_meier_estimator(event, time, conf_type="log-log")
+    return time_points, survival_prob, conf_int
+
+time_mutated, survival_prob_mutated, conf_int_mutated = compute_km_with_ci(y['event'][X['mutated'] == 1], y['time'][X['mutated'] == 1])
+time_wildtype, survival_prob_wildtype, conf_int_wildtype = compute_km_with_ci(y['event'][X['mutated'] == 0], y['time'][X['mutated'] == 0])
 
 # Plot
 plt.figure(figsize=(10, 6))
 plt.step(time_mutated, survival_prob_mutated, where="post", label=f'{gene} Mutated')
+plt.fill_between(time_mutated, conf_int_mutated[0], conf_int_mutated[1], alpha=0.3)
 plt.step(time_wildtype, survival_prob_wildtype, where="post", label=f'{gene} Wild-type')
+plt.fill_between(time_wildtype, conf_int_wildtype[0], conf_int_wildtype[1], alpha=0.3)
 
 plt.ylabel("Survival probability")
 plt.xlabel("Time (days)")
 plt.legend()
 plt.title(f'Survival plot for {gene} mutations in {disease}')
-
 
 # %%
